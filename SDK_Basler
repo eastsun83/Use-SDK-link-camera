@@ -53,10 +53,10 @@ namespace MIL_Text.Driver
                     INetConnectionProps connProps = netSharingMgr.get_NetConnectionProps(connection);
                     //if (connProps.Name == "MyNetworkInterface")
                     { //須設定成你自己的網路連線名稱
-                        pgg.Window_Camera_Load.start_Windows.Label_開機訊息.Content = connProps.Name + "Disconnect";
+                        pgg.Window_Camera_Load.start_Windows.Label_開機訊息.Content = connProps.Name + "Disconnect";//Can delete
                         swf.Application.DoEvents();
                         connection.Disconnect(); //停用網絡
-                        pgg.Window_Camera_Load.start_Windows.Label_開機訊息.Content = connProps.Name + "Connect";
+                        pgg.Window_Camera_Load.start_Windows.Label_開機訊息.Content = connProps.Name + "Connect";//Can delete
                         swf.Application.DoEvents();
                         connection.Connect();    //啟用網絡
                     }
@@ -70,7 +70,7 @@ namespace MIL_Text.Driver
 
             for(int i = 0;i< 10;i++)
             {
-                pgg.Window_Camera_Load.start_Windows.Label_開機訊息.Content = i.ToString();
+                pgg.Window_Camera_Load.start_Windows.Label_開機訊息.Content = i.ToString();//Can delete
                 swf.Application.DoEvents();
                 Thread.Sleep(1000);
             }
@@ -218,7 +218,7 @@ namespace MIL_Text.Driver
                     }
                 }
             }
-            pgg.Window_Camera_Load.start_Windows.Label_開機訊息.Content = "相機設定完成";
+            pgg.Window_Camera_Load.start_Windows.Label_開機訊息.Content = "相機設定完成";//Can delete
             swf.Application.DoEvents();
         }
 
