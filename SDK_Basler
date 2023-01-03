@@ -1,0 +1,323 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Runtime.InteropServices;
+using Basler.Pylon;
+using NETCONLib;
+using swf = System.Windows.Forms;
+
+namespace MIL_Text.Driver
+{
+    public class Driver_Basler
+    {
+        public Camera[] 載入相機尚未排序;
+        public Camera[] 相機;
+        
+        public int NbCameras = 0;
+        public int[] 相機象素寬 = null;
+        public int[] 相機象素高 = null;
+
+        /// <summary>
+        /// 各個CCD 相機之名稱
+        /// </summary>
+        public string[] Camera_Name;
+        /// <summary>
+        /// 各個CCD 相機之型號
+        /// </summary>
+        public string[] Camera_Model;
+        /// <summary>
+        /// 相機廠牌
+        /// </summary>
+        public string[] Camera_Vendor;
+        /// <summary>
+        /// 各個CCD 相機之IP位置
+        /// </summary>
+        public string[] Camera_IP;
+        /// <summary>
+        /// 各個CCD 搜尋到攝影機IP後碼 192.168.2.1  
+        /// 此參數為1
+        /// </summary>
+        public string[] Data_Number;
+        INetSharingEveryConnectionCollection connections = null;
+        void 重啟網路()
+        {
+            try
+            {
+                NetSharingManagerClass netSharingMgr = new NetSharingManagerClass();
+                connections = netSharingMgr.EnumEveryConnection;
+                foreach (INetConnection connection in connections)
+                {
+                    INetConnectionProps connProps = netSharingMgr.get_NetConnectionProps(connection);
+                    //if (connProps.Name == "MyNetworkInterface")
+                    { //須設定成你自己的網路連線名稱
+                        pgg.Window_Camera_Load.start_Windows.Label_開機訊息.Content = connProps.Name + "Disconnect";
+                        swf.Application.DoEvents();
+                        connection.Disconnect(); //停用網絡
+                        pgg.Window_Camera_Load.start_Windows.Label_開機訊息.Content = connProps.Name + "Connect";
+                        swf.Application.DoEvents();
+                        connection.Connect();    //啟用網絡
+                    }
+                }
+                
+            }
+            catch
+            {
+                Syauto_MessageBox.Show("網路重啟失敗");
+            }
+
+            for(int i = 0;i< 10;i++)
+            {
+                pgg.Window_Camera_Load.start_Windows.Label_開機訊息.Content = i.ToString();
+                swf.Application.DoEvents();
+                Thread.Sleep(1000);
+            }
+
+        }
+
+        static void Enable(string interfaceName)
+        {
+            System.Diagnostics.ProcessStartInfo psi =
+                   new System.Diagnostics.ProcessStartInfo("netsh", "interface set interface \"" + interfaceName + "\" enable");
+            System.Diagnostics.Process p = new System.Diagnostics.Process();
+            p.StartInfo = psi;
+            p.Start();
+        }
+        static void Disable(string interfaceName)
+        {
+            System.Diagnostics.ProcessStartInfo psi =
+                new System.Diagnostics.ProcessStartInfo("netsh", "interface set interface \"" + interfaceName + "\" disable");
+            System.Diagnostics.Process p = new System.Diagnostics.Process();
+            p.StartInfo = psi;
+            p.Start();
+        }
+
+        void Basler_相機開啟(int i,bool 是否開啟重開網路功能)
+        {
+            try
+            {
+                相機[i].Open();
+                相機象素寬[i] = Convert.ToInt32(相機[i].Parameters[PLCamera.Width].GetValue());
+
+                相機象素高[i] = Convert.ToInt32(相機[i].Parameters[PLCamera.Height].GetValue());
+
+                IP = 相機[i].CameraInfo[CameraInfoKey.DeviceIpAddress];
+                string[] path_Data = IP.Split('.');
+
+                Camera_IP[i] = Convert.ToString(path_Data[0]) + "," + Convert.ToString(path_Data[1])
+                    + "," + Convert.ToString(path_Data[2]) + "," + Convert.ToString(path_Data[3]);
+                Data_Number[i] = Convert.ToString(path_Data[3]);
+            }
+            catch
+            {
+                pgg.Window_Camera_Load.start_Windows.Label_開機訊息.Content = "相機打開失敗 將重啟網路連線";
+                swf.Application.DoEvents();
+                cameraInfos = null;
+                重啟網路();
+                Basler_初始化(pgg,false);
+            }
+        }
+
+        List<ICameraInfo> cameraInfos = null;
+        void Basler_尋找相機()
+        {
+
+
+            cameraInfos = CameraFinder.Enumerate();
+            
+            NbCameras = cameraInfos.Count;
+            
+                
+        }
+        string IP = null;
+        Page_Camera pgg;
+        public void Basler_初始化(Page_Camera pg,bool 是否開啟重開網路功能)
+        {
+            pgg = pg;
+            pgg.Window_Camera_Load.start_Windows.Label_開機訊息.Content = "尋找相機中";
+            swf.Application.DoEvents();
+            Basler_尋找相機();
+
+            if (NbCameras <= 0)
+            {
+                return;
+            }
+
+            載入相機尚未排序 = new Camera[NbCameras + 1];
+            相機 = new Camera[NbCameras + 1];
+            
+            
+
+            if (NbCameras > 0)
+            {
+                int[,] IP_Number = new int[3, NbCameras + 1];
+                int 相機計數 = 1;
+                相機象素寬 = new int[NbCameras + 1];
+                相機象素高 = new int[NbCameras + 1];
+
+                Camera_Vendor = new string[NbCameras + 1];
+
+                Camera_Model = new string[NbCameras + 1];
+
+                Camera_Name = new string[NbCameras + 1];
+
+                Camera_IP = new string[NbCameras + 1];
+
+                Data_Number = new string[NbCameras + 1];
+
+                foreach (ICameraInfo cameraInfo in cameraInfos)
+                {
+                    載入相機尚未排序[相機計數] = new Camera(cameraInfo);
+
+                    IP = 載入相機尚未排序[相機計數].CameraInfo[CameraInfoKey.NetworkInterfaceIpAddress];
+                    string[] path_Data = IP.Split('.');
+
+                    try
+                    {
+                        IP_Number[1, 相機計數] = 相機計數;
+                        IP_Number[2, 相機計數] = Convert.ToInt32(path_Data[3]);
+                    }
+                    catch
+                    {
+                        Syauto_MessageBox.Show("轉換出問題啦");
+                    }
+
+                    相機計數++;
+                }
+                bubbleSort(IP_Number, NbCameras + 1);
+
+                for (int i = 1; i < NbCameras + 1; i++)
+                {
+                    相機[i] = 載入相機尚未排序[IP_Number[1, i]];
+                }
+
+                for (int i = 1; i < NbCameras + 1; i++)
+                {
+                    //定義攝影機
+                    //MIL.MdigAlloc(MilSystem, i - 1, "M_DEFAULT", MIL.M_NULL, ref MilDigitizer[i]);
+                    if (相機[i] != null)
+                    {
+                        Camera_Vendor[i] = 相機[i].CameraInfo[CameraInfoKey.VendorName];
+
+                        Camera_Model[i] = 相機[i].CameraInfo[CameraInfoKey.ModelName];
+
+                        Camera_Name[i] = 相機[i].CameraInfo[CameraInfoKey.UserDefinedName];
+                        pgg.Window_Camera_Load.start_Windows.Label_開機訊息.Content = "打開相機中";
+                        swf.Application.DoEvents();
+                        if (相機[i].IsOpen != true)
+                        {
+
+                            Basler_相機開啟(i, 是否開啟重開網路功能);
+                        }
+                        
+                        
+                        //相機[i].Close();
+
+                    }
+                }
+            }
+            pgg.Window_Camera_Load.start_Windows.Label_開機訊息.Content = "相機設定完成";
+            swf.Application.DoEvents();
+        }
+
+        public int 相機計數 = 0;
+
+        public void RunMultipleCameras_Basler(ref bool RunMultipleCameras_Once_Alloc, Camera 相機管理,ref byte[] 讀取圖片陣列, ref bool 圖片有載入)
+        {
+            try
+            {
+                if (相機管理.StreamGrabber.IsGrabbing)
+                {
+                    using (IGrabResult grabResult = 相機管理.StreamGrabber.RetrieveResult(5000, TimeoutHandling.ThrowException))
+                    {
+                        if (grabResult.GrabSucceeded)
+                        {
+
+                            if (RunMultipleCameras_Once_Alloc == false)
+                            {
+                                讀取圖片陣列 = new byte[grabResult.Width * grabResult.Height];
+                                //三倍讀取圖片陣列 = new byte[rawImage.DataSize * 3];
+                                RunMultipleCameras_Once_Alloc = true;
+                            }
+                            讀取圖片陣列 = (byte[])grabResult.PixelData;
+                            //System.Runtime.InteropServices.Marshal.Copy((IntPtr)grabResult.PixelDataPointer, 讀取圖片陣列, 0, (int)grabResult.Width * grabResult.Height);
+                            圖片有載入 = true;
+                        }
+                    }
+                    //return 讀取圖片陣列;
+                }
+                else
+                {
+                    圖片有載入 = false;
+                }
+
+            }
+            catch
+            {
+                圖片有載入 = false;
+            }
+            
+        }
+
+
+        public void Basler_Free()
+        {
+            for (int i = 1; i < NbCameras + 1; i++)
+            {
+                if (相機[i].IsOpen)
+                {
+                    相機[i].Close();
+                    相機[i].Dispose();
+                }
+            }
+        }
+
+
+
+
+
+        /// <summary>
+        /// 由小到大 0不排序
+        /// </summary>
+        /// <param name="array"></param>
+        /// <returns></returns>
+        public static void bubbleSort(int[,] list, double Length)
+        {
+            try
+            {
+                int n = Convert.ToInt32(Length);
+                int temp;
+                //int Flag = 1; //旗標
+                int i;
+                for (i = 2; i <= n - 1; i++)
+                {    // 外層迴圈控制比較回數
+                    //Flag = 0;
+                    for (int j = 2; j <= n - 1; j++)
+                    {  // 內層迴圈控制每回比較次數            
+                        if (list[2, j] > list[2, j - 1])
+                        {  // 比較鄰近兩個物件，右邊比左邊小時就互換。	       
+                            temp = list[2, j];
+                            list[2, j] = list[2, j - 1];
+                            list[2, j - 1] = temp;
+
+                            temp = list[1, j];
+                            list[1, j] = list[1, j - 1];
+                            list[1, j - 1] = temp;
+
+                            //Flag = 1;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                Syauto_MessageBox.Show("氣泡排序出問題拉");
+            }
+
+        }
+
+
+    }
+}
