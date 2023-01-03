@@ -1,0 +1,250 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using SpinnakerNET;
+using SpinnakerNET.GenApi;
+using System.Runtime.InteropServices;
+using swf = System.Windows.Forms;
+
+namespace MIL_Text.Driver
+{
+    public class Driver_FLIR
+    {
+        INodeMap nodeMapTLDevice;
+
+        ManagedSystem system = null;
+        IList<IManagedCamera> cameraList;
+
+        public IManagedCamera[] 載入相機尚未排序;
+        public IManagedCamera[] 相機;
+        public int NbCameras = 0;
+        public int[] 相機象素寬 = null;
+        public int[] 相機象素高 = null;
+
+        /// <summary>
+        /// 各個CCD 相機之名稱
+        /// </summary>
+        public string[] Camera_Name;
+        /// <summary>
+        /// 各個CCD 相機之型號
+        /// </summary>
+        public string[] Camera_Model;
+        /// <summary>
+        /// 相機廠牌
+        /// </summary>
+        public string[] Camera_Vendor;
+        /// <summary>
+        /// 各個CCD 相機之IP位置
+        /// </summary>
+        public string[] Camera_IP;
+        /// <summary>
+        /// 各個CCD 搜尋到攝影機IP後碼 192.168.2.1  
+        /// 此參數為1
+        /// </summary>
+        public string[] Data_Number;
+        Page_Camera pgg;
+        public void FLIR_初始化(Page_Camera pg)
+        {
+            pgg = pg;
+            pgg.Window_Camera_Load.start_Windows.Label_開機訊息.Content = "尋找相機中";
+            swf.Application.DoEvents();
+            system = new ManagedSystem();
+            cameraList = system.GetCameras();
+
+            NbCameras = cameraList.Count;
+
+            if (NbCameras == 0)
+            {
+                return;
+            }
+
+            載入相機尚未排序 = new IManagedCamera[NbCameras + 1];
+
+            //偵測到可用相機數量
+            if (NbCameras > 0)
+            {
+                /// <summary>
+                /// [選擇,編號1_或IP_2]
+                /// </summary>
+                int[,] IP_Number = new int[3, NbCameras + 1];
+                /// <summary>
+                /// 排序過後號碼
+                /// </summary>
+                int[] IP_Number2 = new int[NbCameras + 1];
+
+                相機象素寬 = new int[NbCameras + 1];
+                相機象素高 = new int[NbCameras + 1];
+
+                相機 = new IManagedCamera[NbCameras + 1];
+                載入相機尚未排序 = new IManagedCamera[NbCameras + 1];
+
+                Camera_Vendor = new string[NbCameras + 1];
+
+                Camera_Model = new string[NbCameras + 1];
+
+                Camera_Name = new string[NbCameras + 1];
+
+                Camera_IP = new string[NbCameras + 1];
+
+                Data_Number = new string[NbCameras + 1];
+
+
+                int 相機計數 = 0;
+                foreach (IManagedCamera managedCamera in cameraList)
+                {
+                    // Initialize camera
+                    managedCamera.Init();
+                    INodeMap nodeMap = managedCamera.GetNodeMap();
+                    //IP = nodeMap.GetNode<IInteger>("GevCurrentIPAddress");
+                    byte[] 讀取IP_BYTE = BitConverter.GetBytes(nodeMap.GetNode<IInteger>("GevCurrentIPAddress").Value);
+
+                    載入相機尚未排序[相機計數] = managedCamera;
+                    try
+                    {
+                        IP_Number[1, 相機計數] = 相機計數;
+                        IP_Number[2, 相機計數] = Convert.ToInt32(讀取IP_BYTE[0]);
+                    }
+                    catch
+                    {
+                        Syauto_MessageBox.Show("轉換出問題啦");
+                    }
+
+                    相機計數++;
+
+                    //iWidth = nodeMap.GetNode<IInteger>("Width");
+                    //iHeight = nodeMap.GetNode<IInteger>("Height");
+                }
+
+                bubbleSort(IP_Number, NbCameras + 1);
+
+                for (int i = 1; i < NbCameras + 1; i++)
+                {
+                    相機[i] = 載入相機尚未排序[IP_Number[1, i]];
+                }
+
+                for (int i = 1; i < NbCameras + 1; i++)
+                {
+                    //定義攝影機
+                    //MIL.MdigAlloc(MilSystem, i - 1, "M_DEFAULT", MIL.M_NULL, ref MilDigitizer[i]);
+                    if (相機[i] != null)
+                    {
+                        INodeMap nodeMap = 相機[i].GetNodeMap();
+
+                        Camera_Vendor[i] = nodeMap.GetNode<IString>("DeviceVendorName").Value;
+
+                        Camera_Model[i] = nodeMap.GetNode<IString>("DeviceModelName").Value;
+
+                        Camera_Name[i] = nodeMap.GetNode<IString>("DeviceUserID").Value;
+
+                        相機象素寬[i] = Convert.ToInt32(nodeMap.GetNode<IInteger>("Width").Value);
+
+                        相機象素高[i] = Convert.ToInt32(nodeMap.GetNode<IInteger>("Height").Value);
+
+                        byte[] 讀取IP_BYTE = BitConverter.GetBytes(nodeMap.GetNode<IInteger>("GevCurrentIPAddress").Value);
+                        Camera_IP[i] = Convert.ToString(讀取IP_BYTE[3]) + "," + Convert.ToString(讀取IP_BYTE[2])
+                            + "," + Convert.ToString(讀取IP_BYTE[1]) + "," + Convert.ToString(讀取IP_BYTE[0]);
+                        Data_Number[i] = Convert.ToString(讀取IP_BYTE[0]);
+
+                    }
+                }
+            }
+            pgg.Window_Camera_Load.start_Windows.Label_開機訊息.Content = "相機設定完成";
+            swf.Application.DoEvents();
+        }
+
+        public int 相機計數 = 0;
+
+        
+        public void RunMultipleCameras_FLIR(ref bool RunMultipleCameras_Once_Alloc, IManagedCamera 相機管理,ref byte[] 讀取圖片陣列,ref bool 圖片有載入)
+        {
+            try
+            {
+                using (IManagedImage rawImage = 相機管理.GetNextImage(100))
+                {
+
+                    if (rawImage.IsIncomplete)
+                    {
+                        //return false;
+                        圖片有載入 = false;
+                    }
+                    else
+                    {
+                        
+                        if (RunMultipleCameras_Once_Alloc == false)
+                        {
+                            讀取圖片陣列 = new byte[rawImage.DataSize];
+                            RunMultipleCameras_Once_Alloc = true;
+                        }
+
+                        Marshal.Copy((IntPtr)rawImage.DataPtr, 讀取圖片陣列, 0, (int)rawImage.DataSize);
+
+                        //三倍讀取圖片陣列 = 讀取圖片陣列 * 3;
+                        /*
+                        Parallel.For(0, rawImage.DataSize, i =>
+                        //for (int i = 0;i < rawImage.DataSize;i++)
+                        {
+                            三倍讀取圖片陣列[(i * 3) + 0] = 讀取圖片陣列[i];
+                            三倍讀取圖片陣列[(i * 3) + 1] = 讀取圖片陣列[i];
+                            三倍讀取圖片陣列[(i * 3) + 2] = 讀取圖片陣列[i];
+                        });
+                        */
+                        //return true;
+                        圖片有載入 = true;
+                    }
+                }
+                //return 讀取圖片陣列;
+            }
+            catch
+            {
+                圖片有載入 = false;
+            }
+        }
+
+
+
+
+
+
+        /// <summary>
+        /// 由小到大 0不排序
+        /// </summary>
+        /// <param name="array"></param>
+        /// <returns></returns>
+        public static void bubbleSort(int[,] list, double Length)
+        {
+            try
+            {
+                int n = Convert.ToInt32(Length);
+                int temp;
+                //int Flag = 1; //旗標
+                int i;
+                for (i = 2; i <= n - 1; i++)
+                {    // 外層迴圈控制比較回數
+                    //Flag = 0;
+                    for (int j = 2; j <= n - 1; j++)
+                    {  // 內層迴圈控制每回比較次數            
+                        if (list[2, j] > list[2, j - 1])
+                        {  // 比較鄰近兩個物件，右邊比左邊小時就互換。	       
+                            temp = list[2, j];
+                            list[2, j] = list[2, j - 1];
+                            list[2, j - 1] = temp;
+
+                            temp = list[1, j];
+                            list[1, j] = list[1, j - 1];
+                            list[1, j - 1] = temp;
+
+                            //Flag = 1;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                Syauto_MessageBox.Show("氣泡排序出問題拉");
+            }
+
+        }
+    }
+}
